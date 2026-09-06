@@ -1,17 +1,26 @@
 import os
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 
-# Paths
-os.makedirs("store_assets/google_play", exist_ok=True)
-os.makedirs("store_assets/app_store_6.5", exist_ok=True)
-os.makedirs("store_assets/app_store_5.5", exist_ok=True)
+# Output directories
+DIRECTORIES = [
+    "store_assets/google_play",
+    "store_assets/google_play_tablet_7",
+    "store_assets/google_play_tablet_10",
+    "store_assets/app_store_6.5",
+    "store_assets/app_store_5.5",
+    "store_assets/app_store_ipad_13",
+    "store_assets/app_store_ipad_11",
+]
+
+for d in DIRECTORIES:
+    os.makedirs(d, exist_ok=True)
 
 # Copy 512 icon to google_play
 if os.path.exists("store_assets/play_store/icon_512.png"):
     img_512 = Image.open("store_assets/play_store/icon_512.png")
     img_512.save("store_assets/google_play/icon_512.png")
 
-# Fonts
+# System fonts
 FONT_BOLD = "C:/Windows/Fonts/consola.ttf"
 FONT_TITLE = "C:/Windows/Fonts/courbd.ttf"
 
@@ -56,7 +65,6 @@ screens_info = [
 ]
 
 def crop_gameplay(img):
-    # Original is 720x1600. Crop top status bar (y: 80) and bottom android nav bar (y: 1520)
     w, h = img.size
     top = int(h * 0.055)
     bottom = int(h * 0.945)
@@ -65,7 +73,6 @@ def crop_gameplay(img):
 def draw_background(draw, width, height):
     # Dark retro gradient with subtle grid pattern
     for y in range(height):
-        # Vertical gradient from #0D1208 to #050704
         factor = y / height
         r = int(14 * (1 - factor) + 5 * factor)
         g = int(22 * (1 - factor) + 8 * factor)
@@ -93,12 +100,10 @@ def create_store_screenshot(src_path, title, subtitle, target_size):
     sub_font_size = int(28 * scale)
     title_font, sub_font = get_fonts(title_font_size, sub_font_size)
 
-    # Header text
     header_top = int(80 * scale)
 
-    # Accent color #A3C133 (classic olive retro LCD green)
+    # Accent color #B5CB38 (classic olive retro LCD green)
     accent_color = (181, 203, 56)
-    dim_color = (130, 150, 40)
 
     # Title
     t_bbox = draw.textbbox((0, 0), title, font=title_font)
@@ -149,69 +154,63 @@ def create_store_screenshot(src_path, title, subtitle, target_size):
 
     return canvas
 
-# 1. Generate Google Play Screenshots (1080 x 2400)
-print("Generating Google Play Store screenshots (1080x2400)...")
-for info in screens_info:
-    shot = create_store_screenshot(info["src"], info["title"], info["subtitle"], (1080, 2400))
-    out_path = os.path.join("store_assets/google_play", info["name"])
-    shot.save(out_path, "PNG", quality=95)
-    print(f"Saved: {out_path}")
+def generate_all():
+    targets = [
+        ("Google Play Phone (1080x2400)", "store_assets/google_play", (1080, 2400)),
+        ("Google Play 7\" Tablet (1200x1920)", "store_assets/google_play_tablet_7", (1200, 1920)),
+        ("Google Play 10\" Tablet (1600x2560)", "store_assets/google_play_tablet_10", (1600, 2560)),
+        ("Apple App Store 6.5\" iPhone (1290x2796)", "store_assets/app_store_6.5", (1290, 2796)),
+        ("Apple App Store 5.5\" iPhone (1242x2208)", "store_assets/app_store_5.5", (1242, 2208)),
+        ("Apple App Store 13\" iPad Pro (2048x2732)", "store_assets/app_store_ipad_13", (2048, 2732)),
+        ("Apple App Store 11\" iPad (1668x2388)", "store_assets/app_store_ipad_11", (1668, 2388)),
+    ]
 
-# 2. Generate Apple App Store 6.5\" Screenshots (1290 x 2796)
-print("Generating Apple App Store 6.5\" screenshots (1290x2796)...")
-for info in screens_info:
-    shot = create_store_screenshot(info["src"], info["title"], info["subtitle"], (1290, 2796))
-    out_path = os.path.join("store_assets/app_store_6.5", info["name"])
-    shot.save(out_path, "PNG", quality=95)
-    print(f"Saved: {out_path}")
+    for label, folder, size in targets:
+        print(f"Generating {label}...")
+        for info in screens_info:
+            shot = create_store_screenshot(info["src"], info["title"], info["subtitle"], size)
+            out_path = os.path.join(folder, info["name"])
+            shot.save(out_path, "PNG", quality=95)
+            print(f"  Saved: {out_path}")
 
-# 3. Generate Apple App Store 5.5\" Screenshots (1242 x 2208)
-print("Generating Apple App Store 5.5\" screenshots (1242x2208)...")
-for info in screens_info:
-    shot = create_store_screenshot(info["src"], info["title"], info["subtitle"], (1242, 2208))
-    out_path = os.path.join("store_assets/app_store_5.5", info["name"])
-    shot.save(out_path, "PNG", quality=95)
-    print(f"Saved: {out_path}")
+    # Generate Google Play Feature Graphic (1024 x 500)
+    print("Generating Google Play Feature Graphic (1024x500)...")
+    fg = Image.new("RGB", (1024, 500))
+    fg_draw = ImageDraw.Draw(fg)
+    draw_background(fg_draw, 1024, 500)
 
-# 4. Generate Google Play Feature Graphic (1024 x 500)
-print("Generating Google Play Feature Graphic (1024x500)...")
-fg = Image.new("RGB", (1024, 500))
-fg_draw = ImageDraw.Draw(fg)
-draw_background(fg_draw, 1024, 500)
+    if os.path.exists("logo.png"):
+        logo_img = Image.open("logo.png").convert("RGBA")
+        logo_resized = logo_img.resize((380, 380), Image.Resampling.LANCZOS)
+        fg.paste(logo_resized, (60, 60), mask=logo_resized.split()[3])
 
-# Paste logo on left
-if os.path.exists("logo.png"):
-    logo_img = Image.open("logo.png").convert("RGBA")
-    logo_resized = logo_img.resize((380, 380), Image.Resampling.LANCZOS)
-    fg.paste(logo_resized, (60, 60), mask=logo_resized.split()[3])
+    title_font = ImageFont.truetype(FONT_TITLE, 64)
+    sub_font = ImageFont.truetype(FONT_BOLD, 26)
+    badge_font = ImageFont.truetype(FONT_BOLD, 20)
 
-# Text on right
-title_font = ImageFont.truetype(FONT_TITLE, 64)
-sub_font = ImageFont.truetype(FONT_BOLD, 26)
-badge_font = ImageFont.truetype(FONT_BOLD, 20)
+    accent_color = (181, 203, 56)
+    fg_draw.text((470, 110), "COOL SNAKES", font=title_font, fill=accent_color)
+    fg_draw.text((475, 195), "AUTHENTIC MONOCHROME LCD", font=sub_font, fill=(230, 245, 190))
+    fg_draw.text((475, 235), "EARLY-2000s RETRO EXPERIENCE", font=sub_font, fill=(180, 200, 140))
 
-accent_color = (181, 203, 56)
-fg_draw.text((470, 110), "COOL SNAKES", font=title_font, fill=accent_color)
-fg_draw.text((475, 195), "AUTHENTIC MONOCHROME LCD", font=sub_font, fill=(230, 245, 190))
-fg_draw.text((475, 235), "EARLY-2000s RETRO EXPERIENCE", font=sub_font, fill=(180, 200, 140))
+    badge_y = 310
+    badges = ["1-9 KEYPAD", "SOLID WALLS", "MAX SCORE 019960", "100% OFFLINE"]
+    bx = 475
+    for b in badges:
+        bbox = fg_draw.textbbox((0, 0), b, font=badge_font)
+        bw = bbox[2] - bbox[0] + 16
+        bh = bbox[3] - bbox[1] + 10
+        if bx + bw > 990:
+            bx = 475
+            badge_y += 40
+        fg_draw.rectangle([bx, badge_y, bx + bw, badge_y + bh], outline=accent_color, width=2)
+        fg_draw.text((bx + 8, badge_y + 4), b, font=badge_font, fill=accent_color)
+        bx += bw + 12
 
-# Features pill/badge
-badge_y = 310
-badges = ["1-9 KEYPAD", "SOLID WALLS", "MAX SCORE 019960", "100% OFFLINE"]
-bx = 475
-for b in badges:
-    bbox = fg_draw.textbbox((0, 0), b, font=badge_font)
-    bw = bbox[2] - bbox[0] + 16
-    bh = bbox[3] - bbox[1] + 10
-    if bx + bw > 990:
-        bx = 475
-        badge_y += 40
-    fg_draw.rectangle([bx, badge_y, bx + bw, badge_y + bh], outline=accent_color, width=2)
-    fg_draw.text((bx + 8, badge_y + 4), b, font=badge_font, fill=accent_color)
-    bx += bw + 12
+    fg_out = "store_assets/google_play/feature_graphic_1024x500.png"
+    fg.save(fg_out, "PNG", quality=95)
+    print(f"Saved Feature Graphic: {fg_out}")
+    print("All promotional store assets generated successfully!")
 
-fg_out = "store_assets/google_play/feature_graphic_1024x500.png"
-fg.save(fg_out, "PNG", quality=95)
-print(f"Saved Feature Graphic: {fg_out}")
-
-print("All promotional store assets generated successfully!")
+if __name__ == "__main__":
+    generate_all()
