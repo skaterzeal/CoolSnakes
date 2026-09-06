@@ -10,6 +10,12 @@ void main() {
     final storage = await StorageService.init();
 
     await tester.pumpWidget(CoolSnakeApp(storage: storage));
+    // Verify splash screen appears initially
+    expect(find.text('COOL SNAKES'), findsOneWidget);
+    expect(find.textContaining('LOADING...'), findsOneWidget);
+
+    // Fast-forward past bootup splash sequence
+    await tester.pump(const Duration(milliseconds: 2000));
     await tester.pumpAndSettle();
 
     // Verify Main Menu is rendered

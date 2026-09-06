@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../constants/lcd_colors.dart';
-import '../screens/main_menu_screen.dart';
+import '../screens/splash_screen.dart';
 import '../services/audio_service.dart';
 import '../services/haptics_service.dart';
 import '../services/storage_service.dart';
@@ -38,7 +38,7 @@ class _CoolSnakeAppState extends State<CoolSnakeApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Cool Snake',
+      title: 'Cool Snakes',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -46,7 +46,7 @@ class _CoolSnakeAppState extends State<CoolSnakeApp> {
         primaryColor: _palette.background,
         fontFamily: 'Courier',
       ),
-      home: MainMenuScreen(
+      home: SplashScreen(
         storage: widget.storage,
         audio: _audio,
         haptics: _haptics,
