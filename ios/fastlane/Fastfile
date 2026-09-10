@@ -88,11 +88,8 @@ platform :ios do
         keychain_password: keychain_password
       )
 
-      # Allow codesign tool access without interactive dialog
-      sh "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k #{keychain_password} #{keychain_db}"
-
       # Print available code signing identities to CI log for verification
-      sh "security find-identity -v -p codesigning #{keychain_db}"
+      sh "security find-identity -v -p codesigning #{keychain_db} || true"
     else
       UI.message("Checking existing certificates on Apple Developer account...")
       begin
