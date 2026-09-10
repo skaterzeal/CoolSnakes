@@ -159,12 +159,44 @@ platform :ios do
     sh "cd ../.. && flutter build ios --release --no-codesign"
 
     # Inject exact provisioning profile name into Release.xcconfig
-    release_xcconfig = File.expand_path("Flutter/Release.xcconfig")
+    release_xcconfig = File.expand_path("../Flutter/Release.xcconfig", __dir__)
     File.open(release_xcconfig, "a") do |f|
       f.puts "\nPROVISIONING_PROFILE_SPECIFIER = #{profile_name}\n"
     end
     UI.success("Configured #{release_xcconfig} with PROVISIONING_PROFILE_SPECIFIER = #{profile_name}")
     UI.message("Release.xcconfig contents:\n#{File.read(release_xcconfig)}")
+
+    # Generate dynamic ExportOptions.plist with exact provisioning profile
+    export_plist_path = File.expand_path("../ExportOptions.plist", __dir__)
+    plist_content = <<~PLIST
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+      \t<key>destination</key>
+      \t<string>export</string>
+      \t<key>manageAppVersionAndBuildNumber</key>
+      \t<true/>
+      \t<key>method</key>
+      \t<string>app-store</string>
+      \t<key>signingStyle</key>
+      \t<string>manual</string>
+      \t<key>stripSwiftSymbols</key>
+      \t<true/>
+      \t<key>teamID</key>
+      \t<string>44BXDJ2366</string>
+      \t<key>uploadSymbols</key>
+      \t<true/>
+      \t<key>provisioningProfiles</key>
+      \t<dict>
+      \t\t<key>com.coolsnakes.app</key>
+      \t\t<string>#{profile_name}</string>
+      \t</dict>
+      </dict>
+      </plist>
+    PLIST
+    File.write(export_plist_path, plist_content)
+    UI.success("Generated dynamic ExportOptions.plist at #{export_plist_path}")
 
     # 4. Archive and sign IPA using Fastlane build_app
     UI.message("Archiving and signing IPA using Fastlane build_app...")
@@ -172,17 +204,7 @@ platform :ios do
       workspace: "Runner.xcworkspace",
       scheme: "Runner",
       export_method: "app-store",
-      export_options: {
-        method: "app-store",
-        teamID: "44BXDJ2366",
-        signingStyle: "manual",
-        provisioningProfiles: {
-          "com.coolsnakes.app" => profile_name
-        },
-        manageAppVersionAndBuildNumber: true,
-        stripSwiftSymbols: true,
-        uploadSymbols: true
-      },
+      export_options: export_plist_path,
       output_directory: "../build/ios/ipa",
       output_name: "CoolSnakes.ipa"
     )
