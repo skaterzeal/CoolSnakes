@@ -50,6 +50,7 @@ platform :ios do
 
     keychain_name = "coolsnakes_ci_keychain"
     keychain_password = "ci_temp_password_123"
+    keychain_db = File.expand_path("~/Library/Keychains/#{keychain_name}-db")
 
     # Create and unlock temporary CI keychain
     create_keychain(
@@ -60,6 +61,19 @@ platform :ios do
       timeout: 3600,
       lock_when_sleeps: false
     )
+
+    # Ensure the new keychain is in the macOS user keychain search list
+    sh "security list-keychains -d user -s #{keychain_db} $(security list-keychains -d user | tr -d '\"')"
+    sh "security default-keychain -s #{keychain_db}"
+    sh "security unlock-keychain -p #{keychain_password} #{keychain_db}"
+
+    # Install Apple Worldwide Developer Relations (WWDR) G3 and G6 Intermediate CA certificates
+    # (Without these, macOS Keychain considers any distribution certificate as 'Unknown Authority' / Invalid)
+    UI.message("Installing Apple WWDR Intermediate CA certificates...")
+    sh "curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o /tmp/AppleWWDRCAG3.cer"
+    sh "security import /tmp/AppleWWDRCAG3.cer -k #{keychain_db} -A"
+    sh "curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG6.cer -o /tmp/AppleWWDRCAG6.cer"
+    sh "security import /tmp/AppleWWDRCAG6.cer -k #{keychain_db} -A"
 
     # 1. Certificates
     if ENV['APPLE_CERTIFICATE_BASE64'] && !ENV['APPLE_CERTIFICATE_BASE64'].empty?
@@ -73,6 +87,12 @@ platform :ios do
         keychain_name: keychain_name,
         keychain_password: keychain_password
       )
+
+      # Allow codesign tool access without interactive dialog
+      sh "security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k #{keychain_password} #{keychain_db}"
+
+      # Print available code signing identities to CI log for verification
+      sh "security find-identity -v -p codesigning #{keychain_db}"
     else
       UI.message("Checking existing certificates on Apple Developer account...")
       begin
@@ -90,8 +110,6 @@ platform :ios do
 
         UI.message("Found #{existing_certs.count} existing Distribution Certificate(s) on Apple Developer Portal.")
 
-        # If 2 or more distribution certificates exist, automatically revoke the oldest until only 1 remains
-        # because Apple hard-limits individual developer accounts to 2 distribution certificates!
         while existing_certs.count >= 2
           oldest = existing_certs.sort_by { |c| c.expiration_date.to_s }.first
           UI.important("Certificate limit reached (#{existing_certs.count}/2). Automatically revoking oldest certificate: #{oldest.name} (#{oldest.id}) to make room...")
@@ -106,14 +124,14 @@ platform :ios do
       UI.message("Fetching or creating Apple Distribution Certificate via App Store Connect API...")
       get_certificates(
         api_key: api_key,
-        keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
+        keychain_path: keychain_db,
         keychain_password: keychain_password
       )
 
       # Export newly generated certificate and key as .p12 backup
       begin
         FileUtils.mkdir_p("../../build")
-        sh "security export -k ~/Library/Keychains/#{keychain_name}-db -t identities -f pkcs12 -P 'coolsnakes123' -o ../../build/coolsnakes_distribution.p12"
+        sh "security export -k #{keychain_db} -t identities -f pkcs12 -P 'coolsnakes123' -o ../../build/coolsnakes_distribution.p12"
         UI.success("Created backup Distribution Certificate (.p12) in build directory")
       rescue => e
         UI.message("P12 backup note: #{e.message}")
@@ -130,7 +148,9 @@ platform :ios do
       UI.message("Downloading/creating App Store Provisioning Profile for com.coolsnakes.app...")
       get_provisioning_profile(
         api_key: api_key,
-        app_identifier: "com.coolsnakes.app"
+        app_identifier: "com.coolsnakes.app",
+        keychain_path: keychain_db,
+        force: true
       )
     end
 
