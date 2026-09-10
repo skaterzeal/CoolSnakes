@@ -150,14 +150,26 @@ platform :ios do
       )
     end
 
-    # 3. Build Flutter IPA
-    UI.message("Building Release IPA using Flutter...")
-    sh "cd ../.. && flutter build ipa --release --export-options-plist=ios/ExportOptions.plist"
+    # 3. Build Flutter iOS bundle without signing checks
+    UI.message("Building Flutter iOS bundle (release, no-codesign)...")
+    sh "cd ../.. && flutter build ios --release --no-codesign"
 
-    # 4. Upload to TestFlight
+    # 4. Archive and sign IPA using Fastlane build_app
+    UI.message("Archiving and signing IPA using Fastlane build_app...")
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      export_options: "ExportOptions.plist",
+      output_directory: "../build/ios/ipa",
+      output_name: "CoolSnakes.ipa"
+    )
+
+    # 5. Upload to TestFlight
     UI.message("Uploading IPA to App Store Connect / TestFlight...")
     upload_to_testflight(
       api_key: api_key,
+      ipa: "../build/ios/ipa/CoolSnakes.ipa",
       skip_waiting_for_build_processing: true,
       distribute_external: false
     )
