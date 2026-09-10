@@ -150,9 +150,21 @@ platform :ios do
       )
     end
 
+    profile_name = ENV["SIGH_NAME"] || (Actions.lane_context[SharedValues::SIGH_NAME] rescue nil) || "com.coolsnakes.app AppStore"
+    profile_uuid = ENV["SIGH_UUID"] || (Actions.lane_context[SharedValues::SIGH_UUID] rescue nil)
+    UI.message("Using Provisioning Profile: '#{profile_name}' (UUID: #{profile_uuid})")
+
     # 3. Build Flutter iOS bundle without signing checks
     UI.message("Building Flutter iOS bundle (release, no-codesign)...")
     sh "cd ../.. && flutter build ios --release --no-codesign"
+
+    # Inject exact provisioning profile name into Release.xcconfig
+    release_xcconfig = File.expand_path("Flutter/Release.xcconfig")
+    File.open(release_xcconfig, "a") do |f|
+      f.puts "\nPROVISIONING_PROFILE_SPECIFIER = #{profile_name}\n"
+    end
+    UI.success("Configured #{release_xcconfig} with PROVISIONING_PROFILE_SPECIFIER = #{profile_name}")
+    UI.message("Release.xcconfig contents:\n#{File.read(release_xcconfig)}")
 
     # 4. Archive and sign IPA using Fastlane build_app
     UI.message("Archiving and signing IPA using Fastlane build_app...")
@@ -160,7 +172,17 @@ platform :ios do
       workspace: "Runner.xcworkspace",
       scheme: "Runner",
       export_method: "app-store",
-      export_options: "ExportOptions.plist",
+      export_options: {
+        method: "app-store",
+        teamID: "44BXDJ2366",
+        signingStyle: "manual",
+        provisioningProfiles: {
+          "com.coolsnakes.app" => profile_name
+        },
+        manageAppVersionAndBuildNumber: true,
+        stripSwiftSymbols: true,
+        uploadSymbols: true
+      },
       output_directory: "../build/ios/ipa",
       output_name: "CoolSnakes.ipa"
     )

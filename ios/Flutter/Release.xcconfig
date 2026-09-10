@@ -3,4 +3,4 @@
 DEVELOPMENT_TEAM = 44BXDJ2366
 CODE_SIGN_IDENTITY = Apple Distribution
 CODE_SIGN_IDENTITY[sdk=iphoneos*] = Apple Distribution
-PROVISIONING_PROFILE_SPECIFIER = com.coolsnakes.app AppStore
+CODE_SIGN_STYLE = Manual
