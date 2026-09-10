@@ -1,0 +1,83 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and upload Cool Snakes to TestFlight"
+  lane :beta do
+    key_id = ENV['APP_STORE_CONNECT_API_KEY_ID']
+    issuer_id = ENV['APP_STORE_CONNECT_API_ISSUER_ID']
+    key_content = ENV['APP_STORE_CONNECT_API_KEY_BASE64']
+
+    if key_id.nil? || key_id.empty? || issuer_id.nil? || issuer_id.empty? || key_content.nil? || key_content.empty?
+      UI.user_error!("Missing App Store Connect API Key environment variables (APP_STORE_CONNECT_API_KEY_ID, APP_STORE_CONNECT_API_ISSUER_ID, APP_STORE_CONNECT_API_KEY_BASE64)")
+    end
+
+    api_key = app_store_connect_api_key(
+      key_id: key_id,
+      issuer_id: issuer_id,
+      key_content: key_content,
+      is_key_content_base64: true,
+      in_house: false
+    )
+
+    keychain_name = "coolsnakes_ci_keychain"
+    keychain_password = "ci_temp_password_123"
+
+    # Create and unlock temporary CI keychain
+    create_keychain(
+      name: keychain_name,
+      password: keychain_password,
+      default_keychain: true,
+      unlock: true,
+      timeout: 3600,
+      lock_when_sleeps: false
+    )
+
+    # 1. Certificates
+    if ENV['APPLE_CERTIFICATE_BASE64'] && !ENV['APPLE_CERTIFICATE_BASE64'].empty?
+      UI.message("Importing manually provided Apple Distribution Certificate (.p12)...")
+      cert_path = "/tmp/build_cert.p12"
+      File.write(cert_path, Base64.decode64(ENV['APPLE_CERTIFICATE_BASE64']))
+      import_certificate(
+        certificate_path: cert_path,
+        certificate_password: ENV['APPLE_CERTIFICATE_PASSWORD'] || "",
+        keychain_name: keychain_name,
+        keychain_password: keychain_password
+      )
+    else
+      UI.message("Fetching or creating Apple Distribution Certificate via App Store Connect API...")
+      get_certificates(
+        api_key: api_key,
+        keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
+        keychain_password: keychain_password
+      )
+    end
+
+    # 2. Provisioning Profile
+    if ENV['PROVISIONING_PROFILE_BASE64'] && !ENV['PROVISIONING_PROFILE_BASE64'].empty?
+      UI.message("Installing manually provided Provisioning Profile...")
+      pp_path = File.expand_path("~/Library/MobileDevice/Provisioning Profiles/coolsnakes.mobileprovision")
+      FileUtils.mkdir_p(File.dirname(pp_path))
+      File.write(pp_path, Base64.decode64(ENV['PROVISIONING_PROFILE_BASE64']))
+    else
+      UI.message("Downloading/creating App Store Provisioning Profile for com.coolsnakes.app...")
+      get_provisioning_profile(
+        api_key: api_key,
+        app_identifier: "com.coolsnakes.app"
+      )
+    end
+
+    # 3. Build Flutter IPA
+    UI.message("Building Release IPA using Flutter...")
+    sh "cd ../.. && flutter build ipa --release --export-options-plist=ios/ExportOptions.plist"
+
+    # 4. Upload to TestFlight
+    UI.message("Uploading IPA to App Store Connect / TestFlight...")
+    upload_to_testflight(
+      api_key: api_key,
+      skip_waiting_for_build_processing: true,
+      distribute_external: false
+    )
+
+    UI.success("🎉 Cool Snakes successfully uploaded to TestFlight!")
+  end
+end
