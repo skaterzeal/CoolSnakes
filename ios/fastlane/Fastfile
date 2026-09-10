@@ -79,6 +79,15 @@ platform :ios do
         keychain_path: File.expand_path("~/Library/Keychains/#{keychain_name}-db"),
         keychain_password: keychain_password
       )
+
+      # Export newly generated certificate and key as .p12 backup
+      begin
+        FileUtils.mkdir_p("../../build")
+        sh "security export -k ~/Library/Keychains/#{keychain_name}-db -t identities -f pkcs12 -P 'coolsnakes123' -o ../../build/coolsnakes_distribution.p12"
+        UI.success("Created backup Distribution Certificate (.p12) in build directory")
+      rescue => e
+        UI.message("P12 backup note: #{e.message}")
+      end
     end
 
     # 2. Provisioning Profile
