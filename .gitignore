@@ -50,3 +50,7 @@ app.*.map.json
 key.properties
 **/*.keystore
 **/*.jks
+*.p12
+*.pem
+*.certSigningRequest
+/ios_signing/
