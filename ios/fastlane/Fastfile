@@ -11,11 +11,35 @@ platform :ios do
       UI.user_error!("Missing App Store Connect API Key environment variables")
     end
 
-    # Safely decode base64 and write clean .p8 file to avoid null byte errors
-    decoded_key = Base64.decode64(raw_key).gsub("\x00", "").strip
+    # Handle all formats: raw PEM, base64-encoded, literal \n, Windows CRLF, or flattened string
+    s = raw_key.gsub('\\n', "\n").gsub('\\r', "").gsub("\r", "")
+
+    # If it does not contain 'BEGIN', attempt to base64-decode
+    if !s.include?("BEGIN")
+      begin
+        candidate = Base64.decode64(s).gsub("\x00", "").strip
+        if candidate.include?("BEGIN")
+          s = candidate.gsub('\\n', "\n").gsub('\\r', "").gsub("\r", "")
+        end
+      rescue => e
+        UI.message("Base64 decode note: #{e.message}")
+      end
+    end
+
+    # Extract base64 body (strip headers, footers, and non-base64 characters)
+    body = s
+      .gsub(/-----BEGIN[A-Z0-9_ ]+-----/i, "")
+      .gsub(/-----END[A-Z0-9_ ]+-----/i, "")
+      .gsub(/[^A-Za-z0-9+\/=]/, "")
+
+    # Reconstruct standard PEM with 64-character lines
+    formatted_pem = "-----BEGIN PRIVATE KEY-----\n" + body.scan(/.{1,64}/).join("\n") + "\n-----END PRIVATE KEY-----\n"
+
     key_path = File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{key_id}.p8")
     FileUtils.mkdir_p(File.dirname(key_path))
-    File.write(key_path, decoded_key)
+    File.write(key_path, formatted_pem)
+
+    UI.message("Authenticating with App Store Connect API (Key ID: #{key_id})...")
 
     api_key = app_store_connect_api_key(
       key_id: key_id,
