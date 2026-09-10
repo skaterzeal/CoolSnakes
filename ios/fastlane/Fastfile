@@ -73,6 +73,35 @@ platform :ios do
         keychain_password: keychain_password
       )
     else
+      UI.message("Checking existing certificates on Apple Developer account...")
+      begin
+        require 'spaceship'
+        Spaceship::ConnectAPI.token = api_key
+
+        dist_types = [
+          Spaceship::ConnectAPI::Certificate::CertificateType::DISTRIBUTION,
+          Spaceship::ConnectAPI::Certificate::CertificateType::IOS_DISTRIBUTION
+        ]
+
+        existing_certs = Spaceship::ConnectAPI::Certificate.all.select do |c|
+          dist_types.include?(c.certificate_type)
+        end
+
+        UI.message("Found #{existing_certs.count} existing Distribution Certificate(s) on Apple Developer Portal.")
+
+        # If 2 or more distribution certificates exist, automatically revoke the oldest until only 1 remains
+        # because Apple hard-limits individual developer accounts to 2 distribution certificates!
+        while existing_certs.count >= 2
+          oldest = existing_certs.sort_by { |c| c.expiration_date.to_s }.first
+          UI.important("Certificate limit reached (#{existing_certs.count}/2). Automatically revoking oldest certificate: #{oldest.name} (#{oldest.id}) to make room...")
+          oldest.delete!
+          existing_certs.delete(oldest)
+          UI.success("✅ Successfully revoked #{oldest.id} via API!")
+        end
+      rescue => e
+        UI.message("Certificate auto-cleanup note: #{e.message}")
+      end
+
       UI.message("Fetching or creating Apple Distribution Certificate via App Store Connect API...")
       get_certificates(
         api_key: api_key,
