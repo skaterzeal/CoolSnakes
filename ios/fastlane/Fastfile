@@ -154,9 +154,13 @@ platform :ios do
     profile_uuid = ENV["SIGH_UUID"] || (Actions.lane_context[SharedValues::SIGH_UUID] rescue nil)
     UI.message("Using Provisioning Profile: '#{profile_name}' (UUID: #{profile_uuid})")
 
-    # 3. Build Flutter iOS bundle without signing checks
-    UI.message("Building Flutter iOS bundle (release, no-codesign)...")
-    sh "cd ../.. && flutter build ios --release --no-codesign"
+    # 3. Build Flutter iOS bundle without signing checks.
+    # App Store Connect rejects a build whose CFBundleVersion was already uploaded, so in CI
+    # use the monotonically increasing GitHub run number instead of the fixed one in pubspec.yaml.
+    build_number = ENV['GITHUB_RUN_NUMBER'].to_s.strip
+    build_number_flag = build_number.empty? ? "" : " --build-number=#{build_number}"
+    UI.message("Building Flutter iOS bundle (release, no-codesign, build number: #{build_number.empty? ? 'from pubspec.yaml' : build_number})...")
+    sh "cd ../.. && flutter build ios --release --no-codesign#{build_number_flag}"
 
     # Inject exact provisioning profile name into Release.xcconfig
     release_xcconfig = File.expand_path("../Flutter/Release.xcconfig", __dir__)

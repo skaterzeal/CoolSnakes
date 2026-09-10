@@ -2,7 +2,7 @@ name: Build & Deploy iOS (TestFlight / App Store)
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [ master ]
   workflow_dispatch:
     inputs:
       upload_to_testflight:
@@ -17,22 +17,25 @@ env:
 jobs:
   build-and-deploy:
     name: Build & Deploy iOS
-    runs-on: macos-14
+    runs-on: macos-26
     timeout-minutes: 45
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
+      - name: Select Xcode 26 (App Store Connect requires iOS 26 SDK)
         run: |
-          XCODE_APP=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | sort -V | tail -n 1)
-          if [ -n "$XCODE_APP" ]; then
-            echo "Selecting $XCODE_APP"
-            sudo xcode-select -s "$XCODE_APP"
-            echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> $GITHUB_ENV
+          XCODE_APP=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE_APP" ]; then
+            echo "::error::Xcode 26 not found on this runner. Apple rejects uploads built with an SDK older than iOS 26."
+            exit 1
           fi
+          echo "Selecting $XCODE_APP"
+          sudo xcode-select -s "$XCODE_APP"
+          echo "DEVELOPER_DIR=$XCODE_APP/Contents/Developer" >> $GITHUB_ENV
           xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
