@@ -1,0 +1,124 @@
+name: Build & Deploy iOS (TestFlight / App Store)
+
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+    inputs:
+      upload_to_testflight:
+        description: 'Upload to TestFlight / App Store Connect'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy iOS
+    runs-on: macos-14
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          flutter-version: '3.44.0'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Verify analysis & tests
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Check for Apple Signing Secrets
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.APPLE_CERTIFICATE_BASE64 }}" ] && [ -n "${{ secrets.PROVISIONING_PROFILE_BASE64 }}" ]; then
+            echo "has_signing=true" >> $GITHUB_OUTPUT
+            echo "✅ Apple Signing Certificate & Profile detected."
+          else
+            echo "has_signing=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Apple Signing Secrets not set. Will verify iOS build without codesign."
+          fi
+
+      - name: Install Apple Certificate & Provisioning Profile
+        if: steps.check-secrets.outputs.has_signing == 'true'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          BUILD_PROVISION_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD || 'temporal_github_keychain_pass_123' }}
+        run: |
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_cert.p12
+          PP_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+          echo -n "$BUILD_PROVISION_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security list-keychains -d user -s $KEYCHAIN_PATH $(security list-keychains -d user | sed -e 's/"//g')
+
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Build Signed Release IPA
+        if: steps.check-secrets.outputs.has_signing == 'true'
+        run: |
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+
+      - name: Build Unsigned iOS Archive (Fallback / Test)
+        if: steps.check-secrets.outputs.has_signing != 'true'
+        run: |
+          flutter build ios --release --no-codesign
+          echo "=================================================================="
+          echo "⚠️ Unsigned release build succeeded!"
+          echo "To enable automatic App Store / TestFlight upload, add the"
+          echo "following GitHub Repository Secrets in GitHub Settings > Secrets:"
+          echo "  - APPLE_CERTIFICATE_BASE64"
+          echo "  - APPLE_CERTIFICATE_PASSWORD"
+          echo "  - PROVISIONING_PROFILE_BASE64"
+          echo "  - APP_STORE_CONNECT_API_KEY_ID"
+          echo "  - APP_STORE_CONNECT_API_ISSUER_ID"
+          echo "  - APP_STORE_CONNECT_API_KEY_BASE64"
+          echo "=================================================================="
+
+      - name: Upload IPA Artifact
+        if: steps.check-secrets.outputs.has_signing == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CoolSnakes-iOS-IPA
+          path: build/ios/ipa/*.ipa
+          retention-days: 14
+
+      - name: Upload to App Store Connect / TestFlight
+        if: steps.check-secrets.outputs.has_signing == 'true' && (github.event_name == 'push' || github.event.inputs.upload_to_testflight == 'true')
+        env:
+          API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+        run: |
+          if [ -n "$API_KEY_ID" ] && [ -n "$API_ISSUER_ID" ] && [ -n "$API_KEY_BASE64" ]; then
+            mkdir -p ~/.appstoreconnect/private_keys
+            echo -n "$API_KEY_BASE64" | base64 --decode -o ~/.appstoreconnect/private_keys/AuthKey_${API_KEY_ID}.p8
+
+            echo "🚀 Uploading Cool Snakes IPA to App Store Connect & TestFlight..."
+            xcrun altool --upload-app --type ios \
+              -f build/ios/ipa/*.ipa \
+              --apiKey "$API_KEY_ID" \
+              --apiIssuer "$API_ISSUER_ID"
+            echo "🎉 Successfully uploaded to App Store Connect / TestFlight!"
+          else
+            echo "ℹ️ App Store Connect API Key secrets not provided. Skipping automatic upload."
+          fi
